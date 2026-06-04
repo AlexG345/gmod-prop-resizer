@@ -3,16 +3,19 @@ local mode = TOOL.Mode -- Class name of the tool. (name of the .lua file)
 TOOL.Category = "Construction"
 TOOL.Name = "#tool." .. mode .. ".name"
 
-TOOL.ClientConVar[ "sx" ]	= "1.0"
-TOOL.ClientConVar[ "sy" ]	= "1.0"
-TOOL.ClientConVar[ "sz" ]	= "1.0"
-TOOL.ClientConVar[ "smwo" ]	= "1"
-TOOL.ClientConVar[ "cx" ]	= "1.0"
-TOOL.ClientConVar[ "cy" ]	= "1.0"
-TOOL.ClientConVar[ "cz" ]	= "1.0"
-TOOL.ClientConVar[ "prco" ]	= "0"
-TOOL.ClientConVar[ "dcp" ]	= "0"
-TOOL.ClientConVar[ "copy" ]	= "1"
+TOOL.ClientConVar["phys_x"]							= "1.0"
+TOOL.ClientConVar["phys_y"]							= "1.0"
+TOOL.ClientConVar["phys_z"]							= "1.0"
+TOOL.ClientConVar["phys_xyz"]						= "1.0"
+TOOL.ClientConVar["use_phys_for_visu"]				= "1"
+TOOL.ClientConVar["visu_x"]							= "1.0"
+TOOL.ClientConVar["visu_y"]							= "1.0"
+TOOL.ClientConVar["visu_z"]							= "1.0"
+TOOL.ClientConVar["visu_xyz"]						= "1.0"
+TOOL.ClientConVar["keep_constrs_local_positions"]	= "0"
+TOOL.ClientConVar["disable_cl_phys"]				= "0"
+TOOL.ClientConVar["copy"]							= "1"
+
 
 if SERVER then
 
@@ -20,100 +23,101 @@ if SERVER then
 	local advresizer_clamp = CreateConVar( mode .. "_clamp", "0", FCVAR_ARCHIVE + FCVAR_NOTIFY, "Force the Prop Resizer to clamp its values." )
 
 
-	local function ClampVal( scale )
+	local function clampVector( vec )
 
-		scale.x = math.Clamp( scale.x, 0.1, 10 )
-		scale.y = math.Clamp( scale.y, 0.1, 10 )
-		scale.z = math.Clamp( scale.z, 0.1, 10 )
-
-	end
-
-
-	function TOOL:GetClientVector( x, y, z )
-
-		return Vector( self:GetClientNumber( x ), self:GetClientNumber( y ), self:GetClientNumber( z ) )
+		for i = 1, 3 do
+			vec[i] = math.Clamp( vec[i], 0.1, 10 )
+		end
 
 	end
 
 
-	function TOOL:LeftClick( Trace )
+	function TOOL:GetClientVector( prefix )
 
-		local ent = Trace.Entity
+		return Vector(
+			self:GetClientNumber( prefix .. "_x" ),
+			self:GetClientNumber( prefix .. "_y" ),
+			self:GetClientNumber( prefix .. "_z" )
+		)
 
-		if not CollisionResizer.IsValidEntity( ent ) then return false end
+	end
 
-		if ent:IsRagdoll() then return false end
+	function TOOL:SetClientVector( prefix, x, y, z )
 
-		local pscale = self:GetClientVector( "sx", "sy", "sz" )
+		local ply = self:GetOwner()
 
-		local vscale = self:GetClientBool( "smwo" ) and pscale or self:GetClientVector( "cx", "cy", "cz" )
+		for axis, value in pairs({ x = x, y = y, z = z }) do
+			ply:ConCommand( mode .. "_" .. prefix .. "_" .. axis .. " " .. value )
+		end
+
+	end
+
+
+
+	function TOOL:LeftClick( trace )
+
+		local ent = trace.Entity
+		if not CollisionResizer.CanResize( ent ) then return false end
+
+		local scalePhys = self:GetClientVector( "phys" )
+		local scaleVisu = self:GetClientBool( "use_phys_for_visu" ) and scalePhys or self:GetClientVector( "visu" )
 
 		if advresizer_clamp:GetBool() then
-			ClampVal( pscale )
-			ClampVal( vscale )
+			clampVector( scalePhys )
+			clampVector( scaleVisu )
 		end
 
-		return CollisionResizer.SetSize( ent, pscale, vscale, self:GetClientBool( "prco" ), self:GetClientBool( "dcp" ) )
+		return CollisionResizer.SetSize(
+			ent,
+			scalePhys,
+			scaleVisu,
+			self:GetClientBool( "keep_constrs_local_positions" ),
+			self:GetClientBool( "disable_cl_phys" )
+		)
 
 	end
 
 
-	function TOOL:RightClick( Trace )
+	function TOOL:RightClick( trace )
 
-		local ent = Trace.Entity
+		local ent = trace.Entity
 
-		if not CollisionResizer.IsValidEntity( ent ) then return false end
+		if not CollisionResizer.CanResize( ent ) then return false end
 
-		if ent:IsRagdoll() then return false end
-
-		CollisionResizer.FixPhysicalSize( ent )
-		CollisionResizer.FixVisualSize( ent )
+		CollisionResizer.FixPhysicalScale( ent )
+		CollisionResizer.FixVisualScale( ent )
 
 		return true
 
 	end
 
 
-	function TOOL:Reload( Trace )
+	function TOOL:Reload( trace )
 
-		local ent = Trace.Entity
+		local scalePhys, scaleVisu = CollisionResizer.GetScale( trace.Entity )
 
-		if not CollisionResizer.IsValidEntity( ent ) then return false end
+		if not scalePhys then return end
 
-		if ent:IsRagdoll() then return false end
+		phys_x = string.format( "%.2f", scalePhys.x )
+		phys_y = string.format( "%.2f", scalePhys.y )
+		phys_z = string.format( "%.2f", scalePhys.z )
 
-		local physobj = ent:GetPhysicsObject()
+		visu_x = string.format( "%.2f", scaleVisu.x )
+		visu_y = string.format( "%.2f", scaleVisu.y )
+		visu_z = string.format( "%.2f", scaleVisu.z )
+
 		local ply = self:GetOwner()
-		local sizedata = CollisionResizer.ResizedEntities[ent] or CollisionResizer.CreateSizeData( ent, physobj )
-		local sizeVec = sizedata[ 1 ]
 
-		sx = string.format( "%.2f", sizeVec[1] )
-		sy = string.format( "%.2f", sizeVec[2] )
-		sz = string.format( "%.2f", sizeVec[3] )
+		ply:ChatPrint( phys_x .. ", " .. phys_y .. ", " .. phys_z .. " | " .. visu_x .. ", " .. visu_y .. ", " .. visu_z )
 
-		local sizes = ent.EntityMods and ent.EntityMods["advr"]
-			-- We get the visual scale from the table meant for the duplicator!
-			-- if it exists, ent.EntityMods["advr"] contains 6 numbers: the collision scale then the visual scale
-		local visualVec = sizes and Vector( sizes[4], sizes[5], sizes[6])  or Vector( 1, 1, 1 )
-		cx = string.format( "%.2f", visualVec[1] )
-		cy = string.format( "%.2f", visualVec[2] )
-		cz = string.format( "%.2f", visualVec[3] )
-		ply:ChatPrint( sx .. ", " .. sy .. ", " .. sz .. " | " .. cx .. ", " .. cy .. ", " .. cz )
+		if not self:GetClientBool( "copy" ) then return true end
 
-		if self:GetClientBool( "copy" ) then
-			ply:ConCommand( mode .. "_sx " .. sx )
-			ply:ConCommand( mode .. "_sy " .. sy )
-			ply:ConCommand( mode .. "_sz " .. sz )
-			ply:ConCommand( mode .. "_cx " .. cx )
-			ply:ConCommand( mode .. "_cy " .. cy )
-			ply:ConCommand( mode .. "_cz " .. cz )
-		end
+		self:SetClientVector( "phys", phys_x, phys_y, phys_z )
+		self:SetClientVector( "visu", visu_x, visu_y, visu_z )
 
 		return true
 
 	end
-
-
 
 else
 
@@ -129,19 +133,16 @@ else
 	function check(ent) return (CollisionResizer.IsValidEntity( ent ) and not ent:IsRagdoll()) end
 	]]--
 
-	function TOOL:LeftClick( Trace )
-		local ent = Trace.Entity
-		return CollisionResizer.IsValidEntity( ent ) and not ent:IsRagdoll()
+	function TOOL:LeftClick( trace )
+		return CollisionResizer.CanResize( trace.Entity )
 	end
 
-	function TOOL:RightClick( Trace )
-		local ent = Trace.Entity
-		return CollisionResizer.IsValidEntity( ent ) and not ent:IsRagdoll()
+	function TOOL:RightClick( trace )
+		return CollisionResizer.CanResize( trace.Entity )
 	end
 
-	function TOOL:Reload( Trace )
-		local ent = Trace.Entity
-		return CollisionResizer.IsValidEntity( ent ) and not ent:IsRagdoll()
+	function TOOL:Reload( trace )
+		return CollisionResizer.CanResize( trace.Entity )
 	end
 
 	TOOL.Information =	{
@@ -156,19 +157,19 @@ else
 	language.Add( "tool." .. mode .. ".right", "Reset size" )
 	language.Add( "tool." .. mode .. ".reload", "Copy or see scale" )
 
-	language.Add( "tool." .. mode .. ".sxyz", "Physical XYZ Scale" )
-	language.Add( "tool." .. mode .. ".sx", "Physical X Scale" )
-	language.Add( "tool." .. mode .. ".sy", "Physical Y Scale" )
-	language.Add( "tool." .. mode .. ".sz", "Physical Z Scale" )
-	language.Add( "tool." .. mode .. ".smwo", "Scale Visual with Physical" )
-	language.Add( "tool." .. mode .. ".smwo.help", "Use the above values to scale visually." )
-	language.Add( "tool." .. mode .. ".cxyz", "Visual XYZ Scale" )
-	language.Add( "tool." .. mode .. ".cx", "Visual X Scale" )
-	language.Add( "tool." .. mode .. ".cy", "Visual Y Scale" )
-	language.Add( "tool." .. mode .. ".cz", "Visual Z Scale" )
-	language.Add( "tool." .. mode .. ".prco", "Preserve Constraint Locations" )
-	language.Add( "tool." .. mode .. ".prco.help", "If selected, constraints stay fixed in the prop’s local space when resizing." )
-	language.Add( "tool." .. mode .. ".dcp", "Disable Client Physics" )
+	language.Add( "tool." .. mode .. ".phys_xyz", "Physical XYZ Scale" )
+	language.Add( "tool." .. mode .. ".phys_x", "Physical X Scale" )
+	language.Add( "tool." .. mode .. ".phys_y", "Physical Y Scale" )
+	language.Add( "tool." .. mode .. ".phys_z", "Physical Z Scale" )
+	language.Add( "tool." .. mode .. ".use_phys_for_visu", "Scale Visual with Physical" )
+	language.Add( "tool." .. mode .. ".use_phys_for_visu.help", "Use the above values to scale visually." )
+	language.Add( "tool." .. mode .. ".visu_xyz", "Visual XYZ Scale" )
+	language.Add( "tool." .. mode .. ".visu_x", "Visual X Scale" )
+	language.Add( "tool." .. mode .. ".visu_y", "Visual Y Scale" )
+	language.Add( "tool." .. mode .. ".visu_z", "Visual Z Scale" )
+	language.Add( "tool." .. mode .. ".keep_constrs_local_positions", "Preserve Constraint Locations" )
+	language.Add( "tool." .. mode .. ".keep_constrs_local_positions.help", "If selected, constraints stay fixed in the prop’s local space when resizing." )
+	language.Add( "tool." .. mode .. ".disable_cl_phys", "Disable Client Physics" )
 	language.Add( "tool." .. mode .. ".copy", "Copy values on reload" )
 
 
@@ -186,41 +187,42 @@ else
 
 			local scaleSliders = {}
 
-			local XYZNumSlider = cPanel:NumSlider( prefix .. scaleType .. "xyz", nil, 0.1, 10 )
+			-- HACK: convar is set so that going past the max still updates the other sliders...
+			local t = scaleType .. "_xyz"
+			local XYZNumSlider = cPanel:NumSlider( prefix .. t, mode .. "_" .. t, 0.1, 10 )
+
+				local oOVC = XYZNumSlider.Scratch.OnValueChanged
 				function XYZNumSlider.Scratch:OnValueChanged( value )
+
+					for _, slider in pairs( scaleSliders ) do
+						if slider:IsEditing() then return end
+					end
+					-- if not XYZNumSlider:HasFocus() then return end
 					for _, slider in ipairs( scaleSliders ) do
 						slider.Scratch:SetValue( value )
 						slider:ValueChanged( value )
 					end
+
+					oOVC( self, value )
 				end
 
 			for i, axis in ipairs( { "x", "y", "z" } ) do
-				local t = scaleType .. axis
-				local cVar = mode .. "_" .. t
-				local slider = cPanel:NumSlider( prefix .. t, cVar, 0.1, 10 )
-				slider.m_strConVar = cVar
+				t = scaleType .. "_" .. axis
+				local slider = cPanel:NumSlider( prefix .. t, mode .. "_" .. t, 0.1, 10 )
 				scaleSliders[i] = slider
-			end
-
-			-- prevents desync when using xyz slider
-			local slider = scaleSliders[1]
-			function slider:OnValueChanged( value )
-				if XYZNumSlider:IsEditing() then
-					XYZNumSlider:SetValue( value )
-				end
 			end
 
 		end
 
-		createScaleSliders( "s" )
+		createScaleSliders( "phys" )
 
-		cPanel:CheckBox( prefix .. "smwo", mode .. "_smwo" )
+		cPanel:CheckBox( prefix .. "use_phys_for_visu", mode .. "_use_phys_for_visu" )
 
-		createScaleSliders( "c" )
+		createScaleSliders( "visu" )
 
-		cPanel:CheckBox( prefix .. "prco", mode .. "_prco" )
-			cPanel:ControlHelp( prefix .. "prco.help" )
-		cPanel:CheckBox( prefix .. "dcp", mode .. "_dcp" )
+		cPanel:CheckBox( prefix .. "keep_constrs_local_positions", mode .. "_keep_constrs_local_positions" )
+			cPanel:ControlHelp( prefix .. "keep_constrs_local_positions.help" )
+		cPanel:CheckBox( prefix .. "disable_cl_phys", mode .. "_disable_cl_phys" )
 		cPanel:CheckBox( prefix .. "copy", mode .. "_copy" )
 
 	end

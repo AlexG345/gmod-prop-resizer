@@ -1,6 +1,10 @@
 CollisionResizer = CollisionResizer or {}
 
 CollisionResizer.ResizedEntities = {}
+-- physics scale
+-- bounds mins
+-- bounds maxs
+-- original mass
 
 
 function CollisionResizer.IsValidEntity( ent )

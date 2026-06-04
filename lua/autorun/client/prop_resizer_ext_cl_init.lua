@@ -30,6 +30,11 @@ function CollisionResizer.IsBig( scale )
 end
 
 
+function CollisionResizer.CanResize( ent )
+	return isentity( ent ) and ent:IsValid() and not ent:IsRagdoll()
+end
+
+
 saverestore.AddSaveHook( "collision_resizer", function( save )
 
 	save:StartBlock( "collision_resizer_SaveData" )
@@ -94,7 +99,7 @@ saverestore.AddRestoreHook( "collision_resizer", function( restore )
 
 end )
 
-net.Receive( "collision_resizer_set_visual_size", function( l )
+net.Receive( "collision_resizer_set_visual_scale", function( l )
 
 	local ent = net.ReadEntity()
 	local scale = net.ReadString()
@@ -123,7 +128,7 @@ net.Receive( "collision_resizer_set_visual_size", function( l )
 
 end )
 
-net.Receive( "collision_resizer_fix_visual_size", function( l )
+net.Receive( "collision_resizer_fix_visual_scale", function( l )
 
 	local ent = net.ReadEntity()
 
@@ -231,7 +236,7 @@ saverestore.AddRestoreHook( "clientphysics", function( restore )
 
 end )
 
-net.Receive( "collision_resizer_set_physical_size", function( l )
+net.Receive( "collision_resizer_set_physical_scale", function( l )
 
 	local ent = net.ReadEntity()
 	local scale = net.ReadString()
@@ -265,7 +270,7 @@ net.Receive( "collision_resizer_set_physical_size", function( l )
 
 end )
 
-net.Receive( "collision_resizer_fix_physical_size", function( l )
+net.Receive( "collision_resizer_fix_physical_scale", function( l )
 
 	local ent = net.ReadEntity()
 

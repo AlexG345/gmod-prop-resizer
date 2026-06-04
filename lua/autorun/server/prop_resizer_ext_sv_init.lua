@@ -1,7 +1,7 @@
-util.AddNetworkString( "collision_resizer_set_physical_size" )
-util.AddNetworkString( "collision_resizer_fix_physical_size" )
+util.AddNetworkString( "collision_resizer_set_physical_scale" )
+util.AddNetworkString( "collision_resizer_fix_physical_scale" )
 
-local RESET = Vector( 1, 1, 1 )
+local vector_ones = Vector( 1, 1, 1 )
 
 
 local meta = FindMetaTable( "Entity" )
@@ -22,9 +22,15 @@ function meta.StopMotionController(ent)
 	ent.IsMotionControlled = nil
 end
 
-function CollisionResizer.truetest() print("a") end
 
-local function HasValidPhysics( ent ) return ent:GetSolid() == SOLID_VPHYSICS and ent:GetPhysicsObjectCount() == 1 end
+local function hasValidPhysics( ent )
+	return ent:GetSolid() == SOLID_VPHYSICS and ent:GetPhysicsObjectCount() == 1
+end
+
+
+function CollisionResizer.CanResize( ent )
+	return isentity( ent ) and ent:IsValid() and hasValidPhysics( ent ) and not ent:IsRagdoll()
+end
 
 
 ------------------------------------------------
@@ -71,17 +77,17 @@ local function GetConstraintVals( ent, Constraint, Type )
 
 	end
 
-	local Factory = duplicator.ConstraintType[Type]
+	local desc = duplicator.ConstraintType[Type]
 
-	local ConstraintVals = {}
+	local constrData = {}
 
-	for k, Arg in pairs( Factory.Args ) do
+	for k, Arg in pairs( desc.Args ) do
 
-		ConstraintVals[k] = Constraint[Arg] or false
+		constrData[k] = constrData[Arg] or false
 
 	end
 
-	ConstraintData[Constraint] = { Factory.Func, ConstraintVals }
+	ConstraintData[Constraint] = { desc.Func, constrData, Constraint.BuildDupeInfo }
 
 	Constraint:Remove()
 
@@ -110,27 +116,27 @@ local function GetAndResizeConstraintVals( ent, Constraint, Type, scale )
 
 	end
 
-	local Factory = duplicator.ConstraintType[ Type ]
+	local desc = duplicator.ConstraintType[ Type ]
 
-	local ConstraintVals = {}
+	local constrData = {}
 
-	for k, Arg in pairs( Factory.Args ) do
+	for k, Arg in pairs( desc.Args ) do
 
 		if table.HasValue( LPos, Arg ) then
 
 			local Val = Constraint[Arg]
 
-			ConstraintVals[k] = isvector( Val ) and ( Val * scale ) or Val or false
+			constrData[k] = isvector( Val ) and ( Val * scale ) or Val or false
 
 		else
 
-			ConstraintVals[k] = Constraint[Arg] or false
+			constrData[k] = Constraint[Arg] or false
 
 		end
 
 	end
 
-	ConstraintData[ Constraint ] = { Factory.Func, ConstraintVals }
+	ConstraintData[ Constraint ] = { desc.Func, constrData, Constraint.BuildDupeInfo }
 
 	Constraint:Remove()
 
@@ -201,9 +207,9 @@ end
 
 local function ApplyConstraintData()
 
-	for oldConstr, Factory in pairs( ConstraintData ) do
+	for oldConstr, desc in pairs( ConstraintData ) do
 
-		local newConstr = Factory[1]( unpack( Factory[2] ) )
+		local newConstr = desc[1]( unpack( desc[2] ) )
 
 		if CollisionResizer.IsValidEntity( newConstr ) then
 
@@ -223,31 +229,31 @@ end
 --             Physics Functions              --
 ------------------------------------------------
 
-local PhysicsData = {}
 
+local function getPhysicsData( physobj )
 
-local function StorePhysicsData( physobj )
-
-	PhysicsData[1] = physobj:IsGravityEnabled()
-	PhysicsData[2] = physobj:GetMaterial()
-	PhysicsData[3] = physobj:IsCollisionEnabled()
-	PhysicsData[4] = physobj:IsDragEnabled()
-	PhysicsData[5] = physobj:GetVelocity()
-	PhysicsData[6] = physobj:GetAngleVelocity()
-	PhysicsData[7] = physobj:IsMotionEnabled()
+	return {
+		physobj:IsGravityEnabled(),
+		physobj:GetMaterial(),
+		physobj:IsCollisionEnabled(),
+		physobj:IsDragEnabled(),
+		physobj:GetVelocity(),
+		physobj:GetAngleVelocity(),
+		physobj:IsMotionEnabled(),
+	}
 
 end
 
 
-local function ApplyPhysicsData( physobj )
+local function applyPhysicsData( physobj, physicsData )
 
-	physobj:EnableGravity( PhysicsData[1] )
-	physobj:SetMaterial( PhysicsData[2] )
-	physobj:EnableCollisions( PhysicsData[3] )
-	physobj:EnableDrag( PhysicsData[4] )
-	physobj:SetVelocity( PhysicsData[5] )
-	physobj:AddAngleVelocity( PhysicsData[6] - physobj:GetAngleVelocity() )
-	physobj:EnableMotion( PhysicsData[7] )
+	physobj:EnableGravity( physicsData[1] )
+	physobj:SetMaterial( physicsData[2] )
+	physobj:EnableCollisions( physicsData[3] )
+	physobj:EnableDrag( physicsData[4] )
+	physobj:SetVelocity( physicsData[5] )
+	physobj:AddAngleVelocity( physicsData[6] - physobj:GetAngleVelocity() )
+	physobj:EnableMotion( physicsData[7] )
 
 end
 
@@ -299,7 +305,7 @@ function CollisionResizer.CreateSizeData( ent, physobj )
 
 		if not CollisionResizer.IsValidEntity( k ) then
 
-			CollisionResizer.ResizedEntities[ k ] = nil
+			CollisionResizer.ResizedEntities[k] = nil
 
 		end
 	end
@@ -352,15 +358,15 @@ saverestore.AddSaveHook( "collision_resizer", function( save )
 
 		for Key = 1, l do
 
-			local Factory = EntitiesToSave[ Key ]
+			local desc = EntitiesToSave[ Key ]
 
-			local ent = Factory[ 1 ]
+			local ent = desc[ 1 ]
 
 			save:WriteEntity( ent )
 
-			local savedata = { Factory[ 2 ] }
+			local savedata = { desc[ 2 ] }
 
-			if ( HasValidPhysics( ent ) ) then
+			if ( hasValidPhysics( ent ) ) then
 
 				local physobj = ent:GetPhysicsObject()
 
@@ -432,20 +438,20 @@ hook.Add( "Restored", "collision_resizer", function()
 
 		if ( physdata ) then
 
-			local scale = sizedata[ 1 ]
+			local scale = sizedata[1]
 
 			StoreConstraintData( ent )
 			PhysicsData_Restore[ ent ] = physdata
 
 			local success = CollisionResizer.ResizePhysics( ent, scale )
 
-			ent:SetCollisionBounds( sizedata[ 2 ] * scale, sizedata[ 3 ] * scale )
+			ent:SetCollisionBounds( sizedata[2] * scale, sizedata[3] * scale )
 
 			if ( success ) then
 
 				local physobj = ent:GetPhysicsObject()
 
-				physobj:SetMass( math.Clamp( sizedata[ 4 ] * scale.x * scale.y * scale.z, 0.1, 50000 ) )
+				physobj:SetMass( math.Clamp( sizedata[4] * scale.x * scale.y * scale.z, 0.1, 50000 ) )
 				physobj:SetDamping( 0, 0 )
 
 			else
@@ -485,42 +491,36 @@ end )
 
 duplicator.RegisterEntityModifier( "advr", function( ply, ent, data )
 
-	local pscale = Vector( data[1], data[2], data[3] )
-	local vscale = Vector( data[4], data[5], data[6] )
+	local scalePhys = Vector( unpack( data, 1, 3 ) )
+	local scaleVisu = Vector( unpack( data, 5, 6 ) )
 
-	if pscale ~= RESET and HasValidPhysics( ent ) then
+	if scalePhys ~= vector_ones and hasValidPhysics( ent ) then
 
 		local physobj = ent:GetPhysicsObject()
 
 		if CollisionResizer.IsValidPhysicsObject( physobj ) then
 
 			local sizedata = CollisionResizer.CreateSizeData( ent, physobj )
-			sizedata[ 1 ]:Set( pscale )
+			sizedata[1]:Set( scalePhys )
 
-			StorePhysicsData( physobj )
+			local physicsData = getPhysicsData( physobj )
 
-			local success = CollisionResizer.ResizePhysics( ent, pscale )
+			local success = CollisionResizer.ResizePhysics( ent, scalePhys )
 
-			if ( data[ 7 ] ) then
+			local disableClientPhysics = data[7]
 
-				GetSizeHandler( ent ):SetActualPhysicsScale( tostring( RESET ) )
+			GetSizeHandler( ent ):SetPhysicalScale( disableClientPhysics and vector_ones or scalePhys )
 
-			else
+			ent:SetCollisionBounds( sizedata[2] * scalePhys, sizedata[3] * scalePhys )
 
-				GetSizeHandler( ent ):SetActualPhysicsScale( tostring( pscale ) )
-
-			end
-
-			ent:SetCollisionBounds( sizedata[2] * pscale, sizedata[3] * pscale )
-
-			if ( success ) then
+			if success then
 
 				physobj = ent:GetPhysicsObject()
 
-				physobj:SetMass( math.Clamp( sizedata[4] * pscale.x * pscale.y * pscale.z, 0.1, 50000 ) )
+				physobj:SetMass( math.Clamp( sizedata[4] * scalePhys.x * scalePhys.y * scalePhys.z, 0.1, 50000 ) )
 				physobj:SetDamping( 0, 0 )
 
-				ApplyPhysicsData( physobj )
+				applyPhysicsData( physobj, physicsData )
 
 				physobj:Wake()
 
@@ -533,37 +533,42 @@ duplicator.RegisterEntityModifier( "advr", function( ply, ent, data )
 	end
 
 	local handler = GetSizeHandler( ent )
-	handler:SetVisualScale( tostring( vscale ) )
+	handler:SetVisualScale( tostring( scaleVisu ) )
 
 end )
 
 
 -- Use CollisionResizer.SetSize if you want it to be saved by duplicator!
 
-function CollisionResizer.SetPhysicalSize( ent, scale, prco, dcp )
+function CollisionResizer.SetPhysicalScale( ent, scale, keepConstrsLocalPositions, disableClientPhysics )
 
-	if not HasValidPhysics( ent ) then return end
+	if not CollisionResizer.CanResize( ent ) then return end
 	local physobj = ent:GetPhysicsObject()
 	if not CollisionResizer.IsValidPhysicsObject( physobj ) then return end
 
 	local sizedata = CollisionResizer.ResizedEntities[ent] or CollisionResizer.CreateSizeData( ent, physobj )
 
-	if prco then StoreConstraintData( ent ) else ResizeAndStoreConstraintData( ent, scale, sizedata[1] ) end
-	StorePhysicsData( physobj )
+	if keepConstrsLocalPositions then
+		StoreConstraintData( ent )
+	else
+		ResizeAndStoreConstraintData( ent, scale, sizedata[1] )
+	end
+
+	local physicsData = getPhysicsData( physobj )
 
 	local success = CollisionResizer.ResizePhysics( ent, scale )
 	local sizeHandler = ent.SizeHandler
 	local wasResized = CollisionResizer.IsValidEntity( sizeHandler )
 
-	if dcp then -- disable client physics
+	if disableClientPhysics then -- disable client physics
 
-		net.Start( "collision_resizer_fix_physical_size" )
+		net.Start( "collision_resizer_fix_physical_scale" )
 			net.WriteEntity( ent )
 		net.Broadcast()
 
 		if wasResized then
 
-			sizeHandler:SetActualPhysicsScale( tostring( RESET ) )
+			sizeHandler:SetPhysicalScale( tostring( vector_ones ) )
 
 		end
 
@@ -571,7 +576,7 @@ function CollisionResizer.SetPhysicalSize( ent, scale, prco, dcp )
 
 		if wasResized then
 
-			net.Start( "collision_resizer_set_physical_size" )
+			net.Start( "collision_resizer_set_physical_scale" )
 				net.WriteEntity( ent )
 				net.WriteString( tostring( scale ) )
 			net.Broadcast()
@@ -583,7 +588,7 @@ function CollisionResizer.SetPhysicalSize( ent, scale, prco, dcp )
 
 		end
 
-		sizeHandler:SetActualPhysicsScale( tostring( scale ) )
+		sizeHandler:SetPhysicalScale( tostring( scale ) )
 
 	end
 
@@ -593,11 +598,11 @@ function CollisionResizer.SetPhysicalSize( ent, scale, prco, dcp )
 
 		physobj = ent:GetPhysicsObject()
 
-		physobj:SetMass( math.Clamp( sizedata[ 4 ] * scale.x * scale.y * scale.z, 0.1, 50000 ) )
+		physobj:SetMass( math.Clamp( sizedata[4] * scale.x * scale.y * scale.z, 0.1, 50000 ) )
 		physobj:SetDamping( 0, 0 )
 
 		ApplyConstraintData()
-		ApplyPhysicsData( physobj )
+		applyPhysicsData( physobj, physicsData )
 
 		physobj:Wake()
 
@@ -609,14 +614,14 @@ function CollisionResizer.SetPhysicalSize( ent, scale, prco, dcp )
 
 	end
 
-	sizedata[ 1 ]:Set( scale )
+	sizedata[1]:Set( scale )
 
 end
 
 
-function CollisionResizer.FixPhysicalSize( ent, prco )
+function CollisionResizer.FixPhysicalScale( ent, keepConstrsLocalPositions )
 
-	if not HasValidPhysics( ent ) then return end
+	if not CollisionResizer.CanResize( ent ) then return end
 
 	local physobj = ent:GetPhysicsObject()
 
@@ -626,13 +631,13 @@ function CollisionResizer.FixPhysicalSize( ent, prco )
 
 	if not sizedata then return end
 
-	if prco then StoreConstraintData( ent ) else ResizeAndStoreConstraintData( ent, RESET, sizedata[ 1 ] ) end
-	StorePhysicsData( physobj )
+	if keepConstrsLocalPositions then StoreConstraintData( ent ) else ResizeAndStoreConstraintData( ent, vector_ones, sizedata[1] ) end
+	local physicsData = getPhysicsData( physobj )
 
 	ent:EnableCustomCollisions( false )
 	ent:PhysicsInit( SOLID_VPHYSICS )
 
-	net.Start( "collision_resizer_fix_physical_size" )
+	net.Start( "collision_resizer_fix_physical_scale" )
 		net.WriteEntity( ent )
 	net.Broadcast()
 
@@ -640,20 +645,20 @@ function CollisionResizer.FixPhysicalSize( ent, prco )
 
 	if CollisionResizer.IsValidEntity( sizeHandler ) then
 
-		sizeHandler:SetActualPhysicsScale( tostring( RESET ) )
+		sizeHandler:SetPhysicalScale( tostring( vector_ones ) )
 
 	end
 
-	ent:SetCollisionBounds( sizedata[ 2 ], sizedata[ 3 ] )
+	ent:SetCollisionBounds( sizedata[2], sizedata[3] )
 
 	physobj = ent:GetPhysicsObject()
 
 	if CollisionResizer.IsValidPhysicsObject( physobj ) then
 
-		physobj:SetMass( sizedata[ 4 ] )
+		physobj:SetMass( sizedata[4] )
 
 		ApplyConstraintData()
-		ApplyPhysicsData( physobj )
+		applyPhysicsData( physobj, physicsData )
 
 		physobj:Wake()
 
@@ -669,15 +674,15 @@ function CollisionResizer.FixPhysicalSize( ent, prco )
 
 end
 
-util.AddNetworkString( "collision_resizer_set_visual_size" )
-util.AddNetworkString( "collision_resizer_fix_visual_size" )
+util.AddNetworkString( "collision_resizer_set_visual_scale" )
+util.AddNetworkString( "collision_resizer_fix_visual_scale" )
 
 
 -- Use CollisionResizer.SetSize if you want it to be saved by duplicator!
 
-function CollisionResizer.SetVisualSize( ent, scale )
+function CollisionResizer.SetVisualScale( ent, scale )
 
-	net.Start( "collision_resizer_set_visual_size" )
+	net.Start( "collision_resizer_set_visual_scale" )
 		net.WriteEntity( ent )
 		net.WriteString( tostring( scale ) )
 	net.Broadcast()
@@ -685,9 +690,9 @@ function CollisionResizer.SetVisualSize( ent, scale )
 end
 
 
-function CollisionResizer.FixVisualSize( ent )
+function CollisionResizer.FixVisualScale( ent )
 
-	net.Start( "collision_resizer_fix_visual_size" )
+	net.Start( "collision_resizer_fix_visual_scale" )
 		net.WriteEntity( ent )
 	net.Broadcast()
 
@@ -697,36 +702,86 @@ function CollisionResizer.FixVisualSize( ent )
 		sizeHandler:Remove()
 	end
 
-	duplicator.ClearEntityModifier( ent, "advr" )
+	CollisionResizer.ClearDuplicatorData()
 
 end
 
 
-function CollisionResizer.SetSize( ent, pscale, vscale, prco, dcp )
+function CollisionResizer.SetSize( ent, scalePhys, scaleVisu, keepConstrsLocalPositions, disableClientPhysics )
 
-	if dcp == nil then dcp = true end
 	sizeHandler = ent.SizeHandler
 	wasResized = CollisionResizer.IsValidEntity( sizeHandler )
 
-	local pr = ( pscale == RESET )
-	local vr = ( vscale == RESET )
+	local fixPhys = ( scalePhys == vector_ones )
+	local fixVisu = ( scaleVisu == vector_ones )
 
-	if pr then CollisionResizer.FixPhysicalSize( ent ) else CollisionResizer.SetPhysicalSize( ent, pscale, prco, dcp ) end
+	if fixPhys then
+		CollisionResizer.FixPhysicalScale( ent )
+	else
+		CollisionResizer.SetPhysicalScale( ent, scalePhys, keepConstrsLocalPositions, disableClientPhysics )
+	end
 
-	if vr then CollisionResizer.FixVisualSize( ent ) else CollisionResizer.SetVisualSize( ent, vscale ) end
+	if fixVisu then
+		CollisionResizer.FixVisualScale( ent )
+	else
+		CollisionResizer.SetVisualScale( ent, scaleVisu )
+	end
 
-	if pr and vr then -- no need for a sizehandler
+	if fixPhys and fixVisu then -- no need for a sizehandler
 		if wasResized then sizeHandler:Remove() end
-		duplicator.ClearEntityModifier( ent, "advr" )
+		CollisionResizer.ClearDuplicatorData( ent )
 		return true
 	end
 
 	if not wasResized then sizeHandler = CreateSizeHandler( ent ) end
-	sizeHandler:SetVisualScale( tostring( vscale ) )
+	sizeHandler:SetVisualScale( tostring( scaleVisu ) )
 
-	duplicator.StoreEntityModifier( ent, "advr", { pscale.x, pscale.y, pscale.z, vscale.x, vscale.y, vscale.z, dcp } )
+	CollisionResizer.SaveDuplicatorData( ent, scalePhys, scaleVisu, disableClientPhysics )
 
 	-- print("a") -- debug
 	return true
+
+end
+
+
+function CollisionResizer.SaveDuplicatorData( ent, scalePhys, scaleVisu, disableClientPhysics )
+	duplicator.StoreEntityModifier( ent, "advr", {
+		scalePhys.x,
+		scalePhys.y,
+		scalePhys.z,
+		scaleVisu.x,
+		scaleVisu.y,
+		scaleVisu.z,
+		disableClientPhysics
+	} )
+end
+
+
+function CollisionResizer.ClearDuplicatorData( ent )
+	duplicator.ClearEntityModifier( ent, "advr" )
+end
+
+
+
+function CollisionResizer.GetScale( ent )
+
+		if not CollisionResizer.CanResize( ent ) then return false end
+
+		local scalesData		= CollisionResizer.ResizedEntities[ent]
+		-- if it exists, ent.EntityMods["advr"] contains 6 numbers: the collision scale then the visual scale
+		local scalesDataDupe	= ent.EntityMods and ent.EntityMods["advr"]
+
+		local scalePhys	= (
+			( scalesData and scalesData[1] ) or
+			( scalesDataDupe and Vector( scalesDataDupe[1], scalesDataDupe[2], scalesDataDupe[3] ) ) or
+			( Vector( 1, 1, 1 ) )
+		)
+
+		local scaleVisu	= (
+			( scalesDataDupe and Vector( scalesDataDupe[4], scalesDataDupe[5], scalesDataDupe[6] ) ) or
+			( Vector( 1, 1, 1 ) )
+		)
+
+		return scalePhys, scaleVisu
 
 end

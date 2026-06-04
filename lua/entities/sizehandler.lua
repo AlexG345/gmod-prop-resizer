@@ -3,8 +3,7 @@ AddCSLuaFile()
 ENT.Type				= "anim"
 ENT.DisableDuplicator	= true
 
-local RESET = Vector( 1, 1, 1 )
-local EMPTY = Vector( 0, 0, 0 )
+local vector_ones = Vector( 1, 1, 1 )
 local models_error = Model( "models/error.mdl" )
 
 
@@ -38,21 +37,18 @@ end
 
 function ENT:SetupDataTables()
 
-	self:NetworkVar( "String",	0,	"VisualScale",			{ KeyName = "visualscale" } )
+	self:NetworkVar( "String",	0,	"VisualScale",		{ KeyName = "visual_scale" } )
 
-	self:NetworkVar( "String",	1,	"ActualPhysicsScale",	{ KeyName = "actualphysicsscale" } )
+	self:NetworkVar( "String",	1,	"PhysicalScale",	{ KeyName = "physical_scale" } )
 
 	if CLIENT then
 
 		local ent = self:GetParent()
 
-		if CollisionResizer.IsValidEntity( ent ) then
+		if not CollisionResizer.IsValidEntity( ent ) then return end
 
-			if isfunction( self.RefreshVisualSize ) then self:RefreshVisualSize( ent ) end
-
-			if isfunction( self.RefreshClientPhysics ) then self:RefreshClientPhysics( ent ) end
-
-		end
+		self:RefreshVisualScale( ent )
+		self:RefreshPhysicalScale( ent )
 
 	end
 
@@ -70,6 +66,15 @@ if CLIENT then
 
 		if not CollisionResizer.ClientPhysics[ent] then return end
 
+		self:RefreshPhysObj( ent )
+
+	end
+
+
+	function ENT:RefreshPhysObj( ent )
+
+		ent = ent or self:GetParent()
+
 		local physobj = ent:GetPhysicsObject()
 
 		if not CollisionResizer.IsValidPhysicsObject( physobj ) then return end
@@ -82,73 +87,58 @@ if CLIENT then
 	end
 
 
-	function ENT:RefreshVisualSize( ent )
+	function ENT:RefreshVisualScale( ent )
 
 		local sizedata = CollisionResizer.ResizedEntities[ ent ]
 		local scale
 
-		if not sizedata and isfunction( self.GetVisualScale ) then
+		if not sizedata then
 
 			scale = Vector( self:GetVisualScale() )
 
-			if scale ~= RESET and scale ~= EMPTY then
+			if scale == vector_ones or scale == vector_origin then return end
 
-				sizedata = CollisionResizer.CreateSizeData( ent )
-				sizedata[1]:Set( scale )
-
-			end
+			sizedata = CollisionResizer.CreateSizeData( ent )
+			if not sizedata then return end
+			sizedata[1]:Set( scale )
 
 		end
 
-		if not sizedata then return end
-
-		scale = scale or sizedata[ 1 ]
+		scale = scale or sizedata[1]
 
 		local m = Matrix()
 
 		m:Scale( scale )
 		ent:EnableMatrix( "RenderMultiply", m )
-		ent:SetRenderBounds( sizedata[ 2 ] * scale, sizedata[ 3 ] * scale )
+		ent:SetRenderBounds( sizedata[2] * scale, sizedata[3] * scale )
 		ent:DestroyShadow()
 		ent:SetLOD( CollisionResizer.IsBig( scale ) and 0 or -1 )
 
 	end
 
 
-	function ENT:RefreshClientPhysics( ent )
+	function ENT:RefreshPhysicalScale( ent )
 
 		local physdata = CollisionResizer.ClientPhysics[ent]
 		local scale
 
-		if not physdata and isfunction( self.GetActualPhysicsScale ) then
+		if not physdata then
 
-			scale = Vector( self:GetActualPhysicsScale() )
+			scale = Vector( self:GetPhysicalScale() )
 
-			if scale ~= RESET and scale ~= EMPTY then
+			if scale == vector_ones or scale == vector_origin then return end
 
-				physdata = CollisionResizer.CreateClientPhysicsData( ent )
-				physdata[1]:Set( scale )
-
-			end
-
-		end
-
-		if physdata then
-
-			local success = CollisionResizer.ResizePhysics( ent, scale or physdata[ 1 ] )
-
-			if success then
-
-				local physobj = ent:GetPhysicsObject()
-
-				physobj:SetPos( ent:GetPos() )
-				physobj:SetAngles( ent:GetAngles() )
-				physobj:EnableMotion( false )
-				physobj:Sleep()
-
-			end
+			physdata = CollisionResizer.CreateClientPhysicsData( ent )
+			if not physdata then return end
+			physdata[1]:Set( scale )
 
 		end
+
+		local success = CollisionResizer.ResizePhysics( ent, scale or physdata[1] )
+
+		if not success then return end
+
+		self:RefreshPhysObj( ent )
 
 	end
 
@@ -159,8 +149,8 @@ if CLIENT then
 
 		if not CollisionResizer.IsValidEntity( ent ) then return end
 
-		self:RefreshVisualSize( ent )
-		self:RefreshClientPhysics( ent )
+		self:RefreshVisualScale( ent )
+		self:RefreshPhysicalScale( ent )
 
 	end
 
