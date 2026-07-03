@@ -3,8 +3,8 @@ AddCSLuaFile()
 ENT.Type				= "anim"
 ENT.DisableDuplicator	= true
 
-local vector_ones = Vector( 1, 1, 1 )
-local models_error = Model( "models/error.mdl" )
+local vector_ones	= Vector( 1, 1, 1 )
+local models_error	= Model( "models/error.mdl" )
 
 
 function ENT:Initialize()
@@ -23,12 +23,11 @@ function ENT:OnRemove()
 
 	local ent = self:GetParent()
 
-	CollisionResizer.ResizedEntities[ent] = nil
+	-- Can cause some problems.
+	-- CollisionResizer.entsPhysicalData[ent] = nil
 
-	if CollisionResizer.IsValidEntity( ent ) then
-
-		ent.SizeHandler = nil
-
+	if ent:IsValid() then
+		ent.sizeHandler = nil
 	end
 
 end
@@ -38,7 +37,6 @@ end
 function ENT:SetupDataTables()
 
 	self:NetworkVar( "String",	0,	"VisualScale",		{ KeyName = "visual_scale" } )
-
 	self:NetworkVar( "String",	1,	"PhysicalScale",	{ KeyName = "physical_scale" } )
 
 	if CLIENT then
@@ -48,6 +46,8 @@ function ENT:SetupDataTables()
 		if not CollisionResizer.IsValidEntity( ent ) then return end
 
 		self:RefreshVisualScale( ent )
+
+		-- useful for duplicator mostly
 		self:RefreshPhysicalScale( ent )
 
 	end
@@ -62,83 +62,54 @@ if CLIENT then
 
 		local ent = self:GetParent()
 
-		if not CollisionResizer.IsValidEntity( ent ) then return end
+		if not ( CollisionResizer.IsValidEntity( ent ) and CollisionResizer.entsPhysicalData[ent] ) then return end
 
-		if not CollisionResizer.ClientPhysics[ent] then return end
-
-		self:RefreshPhysObj( ent )
-
-	end
-
-
-	function ENT:RefreshPhysObj( ent )
-
-		ent = ent or self:GetParent()
-
-		local physobj = ent:GetPhysicsObject()
-
-		if not CollisionResizer.IsValidPhysicsObject( physobj ) then return end
-
-		physobj:SetPos( ent:GetPos() )
-		physobj:SetAngles( ent:GetAngles() )
-		physobj:EnableMotion( false )
-		physobj:Sleep()
+		CollisionResizer.RefreshPhysObj( ent )
 
 	end
 
 
 	function ENT:RefreshVisualScale( ent )
 
-		local sizedata = CollisionResizer.ResizedEntities[ ent ]
-		local scale
+		local visualData = CollisionResizer.entsVisualData[ent]
 
-		if not sizedata then
+		if not visualData then
 
-			scale = Vector( self:GetVisualScale() )
+			local scale = Vector( self:GetVisualScale() )
 
 			if scale == vector_ones or scale == vector_origin then return end
 
-			sizedata = CollisionResizer.CreateSizeData( ent )
-			if not sizedata then return end
-			sizedata[1]:Set( scale )
+			visualData = CollisionResizer.CreateVisualData( ent )
+			if not visualData then return end
+			visualData[1]:Set( scale )
 
 		end
 
-		scale = scale or sizedata[1]
-
-		local m = Matrix()
-
-		m:Scale( scale )
-		ent:EnableMatrix( "RenderMultiply", m )
-		ent:SetRenderBounds( sizedata[2] * scale, sizedata[3] * scale )
-		ent:DestroyShadow()
-		ent:SetLOD( CollisionResizer.IsBig( scale ) and 0 or -1 )
+		CollisionResizer.ApplyVisualData( ent, visualData )
 
 	end
 
 
 	function ENT:RefreshPhysicalScale( ent )
 
-		local physdata = CollisionResizer.ClientPhysics[ent]
-		local scale
+		print("-- Refreshing Physical Scale --", ent)
 
-		if not physdata then
+		local physicalData	= CollisionResizer.entsPhysicalData[ent]
+		local scalePhys		= Vector( self:GetPhysicalScale() )
 
-			scale = Vector( self:GetPhysicalScale() )
+		if not physicalData then
 
-			if scale == vector_ones or scale == vector_origin then return end
+			if scalePhys == vector_ones or scalePhys == vector_origin then return end
 
-			physdata = CollisionResizer.CreateClientPhysicsData( ent )
-			if not physdata then return end
-			physdata[1]:Set( scale )
+			physicalData = CollisionResizer.CreatePhysicalData( ent )
+			if not physicalData then return end
 
 		end
 
-		local success = CollisionResizer.ResizePhysics( ent, scale or physdata[1] )
+		if physicalData[1] == scalePhys then return end
+		physicalData[1]:Set( scalePhys )
 
-		if not success then return end
-
-		self:RefreshPhysObj( ent )
+		CollisionResizer.ApplyPhysicalData( ent, physicalData )
 
 	end
 
@@ -153,6 +124,16 @@ if CLIENT then
 		self:RefreshPhysicalScale( ent )
 
 	end
+
+
+	-- TODO: what the hell does this do?
+	hook.Add( "NetworkEntityCreated", "collision_resizer", function( ent )
+
+		if ent:GetClass() == "sizehandler" and isfunction( ent.OnNetworkEntityCreated ) then
+			ent:OnNetworkEntityCreated()
+		end
+
+	end )
 
 end
 
