@@ -381,8 +381,6 @@ end
 
 function CollisionResizer.GetScale( ent )
 
-	if not CollisionResizer.SupportsPhysicalData( ent ) then return false end
-
 	local physicalData		= CollisionResizer.entsPhysicalData[ent]
 	-- if it exists, ent.EntityMods["advr"] first 6 values are numbers representing the collision scale then the visual scale
 	local duplicatorData	= CollisionResizer.GetDuplicatorData( ent )

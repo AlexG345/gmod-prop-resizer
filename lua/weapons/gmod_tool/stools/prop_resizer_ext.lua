@@ -58,7 +58,6 @@ if SERVER then
 	function TOOL:LeftClick( trace )
 
 		local ent = trace.Entity
-		if not CollisionResizer.SupportsPhysicalData( ent ) then return false end
 
 		local scalePhys = self:GetClientVector( "phys" )
 		local scaleVisu = self:GetClientBool( "use_phys_for_visu" ) and scalePhys or self:GetClientVector( "visu" )
@@ -83,8 +82,6 @@ if SERVER then
 	function TOOL:RightClick( trace )
 
 		local ent = trace.Entity
-
-		if not CollisionResizer.SupportsPhysicalData( ent ) then return false end
 
 		return CollisionResizer.SetScale(
 			ent,
