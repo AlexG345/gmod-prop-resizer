@@ -271,7 +271,6 @@ function CollisionResizer.SetPhysicalScale( ent, scalePhys, keepConstrsLocalPosi
 	else
 
 		if not sizeHandler then
-			print("no sizehandler found")
 			sizeHandler = CreateSizeHandler( ent )
 		end
 

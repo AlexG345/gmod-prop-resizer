@@ -45,7 +45,7 @@ net.Receive( "collision_resizer_set_physical_scale", function()
 
 	local physicalData = CollisionResizer.entsPhysicalData[ent] or CollisionResizer.CreatePhysicalData( ent )
 
-	if physicalData[1] == scalePhys then print("\n\n early stop \n\n") return end
+	if physicalData[1] == scalePhys then return end
 
 	physicalData[1]:Set( scalePhys )
 

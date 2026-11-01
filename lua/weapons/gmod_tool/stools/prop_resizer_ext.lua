@@ -111,7 +111,7 @@ if SERVER then
 
 		local ply = self:GetOwner()
 
-		ply:ChatPrint( phys_x .. ", " .. phys_y .. ", " .. phys_z .. " | " .. visu_x .. ", " .. visu_y .. ", " .. visu_z )
+		ply:ChatPrint( "Physical scale: " .. phys_x .. ", " .. phys_y .. ", " .. phys_z .. "\nVisual scale: " .. visu_x .. ", " .. visu_y .. ", " .. visu_z )
 
 		if not self:GetClientBool( "copy" ) then return true end
 

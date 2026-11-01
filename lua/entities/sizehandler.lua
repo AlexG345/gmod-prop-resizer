@@ -92,8 +92,6 @@ if CLIENT then
 
 	function ENT:RefreshPhysicalScale( ent )
 
-		print("-- Refreshing Physical Scale --", ent)
-
 		local physicalData	= CollisionResizer.entsPhysicalData[ent]
 		local scalePhys		= Vector( self:GetPhysicalScale() )
 
